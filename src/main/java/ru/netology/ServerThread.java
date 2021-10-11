@@ -78,6 +78,7 @@ public class ServerThread implements Runnable {
                 in.close();
                 out.close();
                 socket.close();
+                return;
             }
 
             final var length = Files.size(filePath);
