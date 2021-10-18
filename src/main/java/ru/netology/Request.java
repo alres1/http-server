@@ -14,12 +14,19 @@ public class Request {
     private String method;
     private String path;
     private List<String> headers;
+    private String body;
     private List<NameValuePair> queryParams;
 
     public Request(String method, String path, List<String> headers) {
         this.method = method;
         this.path = path;
         this.headers = headers;
+    }
+    public Request(String method, String path, List<String> headers, String body) {
+        this.method = method;
+        this.path = path;
+        this.headers = headers;
+        this.body = body;
     }
 
     public String getMethod() {
@@ -28,13 +35,12 @@ public class Request {
     public String getPath() {
         return path;
     }
+    public List<String> getHeaders() { return headers; }
+    public String getBody() { return body; }
+
     public String getPathWithoutQuery() throws URISyntaxException {
         final URI returnPath = new URI(path);
         return returnPath.getPath();
-    }
-
-    public void setQueryParams(List<NameValuePair> params) {
-        this.queryParams = params;
     }
 
     public List<NameValuePair> getQueryParams() throws URISyntaxException {

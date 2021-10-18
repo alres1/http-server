@@ -1,12 +1,10 @@
 package ru.netology;
 
-import org.apache.http.NameValuePair;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
@@ -46,8 +44,9 @@ public class Server {
         public static final String GET = "GET";
         public static final String POST = "POST";
         final List allowedMethods = List.of(GET, POST);
+        private final byte[] requestLineDelimiter = new byte[]{'\r', '\n'};
+        private final byte[] headersDelimiter = new byte[]{'\r', '\n', '\r', '\n'};
 
-        final List<String> validPaths = List.of("/index.html", "/spring.svg", "/spring.png", "/resources.html", "/styles.css", "/app.js", "/links.html", "/forms.html", "/classic.html", "/events.html", "/events.js");
         public ServerThread(Socket socket) {
             this.socket = socket;
         }
@@ -66,76 +65,19 @@ public class Server {
                 final var buffer = new byte[limit];
                 final var read = in.read(buffer);
 
-                final var requestLineDelimiter = new byte[]{'\r', '\n'};
-                final var requestLineEnd = indexOf(buffer, requestLineDelimiter, 0, read);
-                if (requestLineEnd == -1) {
+                RequestLine requestLine = getRequestLine(buffer, read);
+                if (requestLine == null) {
                     badRequest(out);
                     return;
                 }
 
-                final var requestLine = new String(Arrays.copyOf(buffer, requestLineEnd)).split(" ");
-                if (requestLine.length != 3) {
+                List<String> headers = getHeaders(buffer, read, in);
+                if (headers == null) {
                     badRequest(out);
                     return;
                 }
 
-                final var method = requestLine[0];
-                if (!allowedMethods.contains(method)) {
-                    badRequest(out);
-                    return;
-                }
-                System.out.println(method);
-
-                final var path = requestLine[1];
-                if (!path.startsWith("/")) {
-                    badRequest(out);
-                    return;
-                }
-                System.out.println(path);
-
-                final var headersDelimiter = new byte[]{'\r', '\n', '\r', '\n'};
-                final var headersStart = requestLineEnd + requestLineDelimiter.length;
-                final var headersEnd = indexOf(buffer, headersDelimiter, headersStart, read);
-                if (headersEnd == -1) {
-                    badRequest(out);
-                    return;
-                }
-
-                in.reset();
-                in.skip(headersStart);
-
-                final var headersBytes = in.readNBytes(headersEnd - headersStart);
-                final var headers = Arrays.asList(new String(headersBytes).split("\r\n"));
-                System.out.println(headers);
-                //System.out.println(requestLine);
-
-                Request request = new Request(method, path, headers);
-
-                if (!method.equals(GET)) {
-                    in.skip(headersDelimiter.length);
-                    final var contentLength = extractHeader(headers, "Content-Length");
-                    if (contentLength.isPresent()) {
-                        final var length = Integer.parseInt(contentLength.get());
-                        final var bodyBytes = in.readNBytes(length);
-
-                        final var body = new String(bodyBytes);
-//                        System.out.println(body);
-                    }
-                }
-
-                final URI uri = new URI(request.getPath());
-                if(uri.getQuery() != null ){
-                    //Список GET-параметров
-                    List<NameValuePair> nameValuePairs = request.getQueryParams();
-                    for (NameValuePair queryParam : nameValuePairs) {
-                        System.out.println(queryParam.getName() + " - " + queryParam.getValue());
-                    }
-
-                    //Значение GET-параметра по названию одного из параметров
-                    request.setQueryParams(nameValuePairs);
-                    List<String> valuePairs = request.getQueryParam("param2");
-                    System.out.println(valuePairs.get(0));
-                }
+                Request request = new Request(requestLine.getMethod(), requestLine.getPath(), headers, getBody(headers, in));
 
                 MyHandler handler = handlers.get(request.getMethod()).get(request.getPathWithoutQuery());
                 if (handler != null) {
@@ -146,6 +88,58 @@ public class Server {
 
             } catch (IOException | URISyntaxException e) {
                 e.printStackTrace();
+            }
+        }
+
+
+        private RequestLine getRequestLine(byte[] buffer, int read) {
+            final var requestLineEnd = indexOf(buffer, requestLineDelimiter, 0, read);
+            if (requestLineEnd == -1) {
+                return null;
+            }
+
+            final var rLine = new String(Arrays.copyOf(buffer, requestLineEnd)).split(" ");
+            if (rLine.length != 3) {
+                return null;
+            }
+
+            if (!allowedMethods.contains(rLine[0])) {
+                return null;
+            }
+
+            if (!rLine[1].startsWith("/")) {
+                return null;
+            }
+
+            return new RequestLine(rLine[0], rLine[1]);
+        }
+
+        private List<String> getHeaders(byte[] buffer, int read, BufferedInputStream in) throws IOException {
+            final int requestLineEnd = indexOf(buffer, requestLineDelimiter, 0, read);
+
+            final int headersStart = requestLineEnd + requestLineDelimiter.length;
+            final int headersEnd = indexOf(buffer, headersDelimiter, headersStart, read);
+            if (headersEnd == -1) {
+                return null;
+            }
+
+            in.reset();
+            in.skip(headersStart);
+
+            final byte[] headersBytes = in.readNBytes(headersEnd - headersStart);
+            return Arrays.asList(new String(headersBytes).split("\r\n"));
+        }
+
+        private String getBody(List<String> headers, BufferedInputStream in) throws IOException {
+            in.skip(headersDelimiter.length);
+            final var contentLength = extractHeader(headers, "Content-Length");
+            if (contentLength.isPresent()) {
+                final var length = Integer.parseInt(contentLength.get());
+                final var bodyBytes = in.readNBytes(length);
+                final var body = new String(bodyBytes);
+                return body;
+            }else{
+                return "";
             }
         }
     }
